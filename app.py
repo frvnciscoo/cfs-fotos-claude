@@ -5,6 +5,8 @@ import json
 import pandas as pd
 import io
 import time
+import anthropic
+import base64
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Procesador Masivo Contenedores", layout="wide")
@@ -13,11 +15,12 @@ st.set_page_config(page_title="Procesador Masivo Contenedores", layout="wide")
 
 # --- LÓGICA DE IA ---
 def analizar_imagen(image, key):
-    # Configurar la API con la clave que ingresó el usuario
-    genai.configure(api_key=key)
+    client = anthropic.Anthropic(api_key=key)
     
-    # ACTUALIZACIÓN: Usamos el modelo que sí tienes disponible
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    # Convertir la imagen PIL a base64
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    image_data = base64.standard_b64encode(buffer.getvalue()).decode("utf-8")
     
     prompt = """
     Actúa como un sistema OCR experto en logística. Analiza la imagen del contenedor.
@@ -32,10 +35,31 @@ def analizar_imagen(image, key):
     """
     
     try:
-        response = model.generate_content([prompt, image])
-        return response.text
+        response = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": image_data,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ],
+                }
+            ],
+        )
+        return response.content[0].text
     except Exception as e:
-        # Devolvemos el error como texto para verlo en el excel si falla
         return f"Error API: {e}"
 
 def limpiar_json(texto):
@@ -85,7 +109,7 @@ if uploaded_files:
                 img = Image.open(uploaded_file)
                 
                 # 1. Llamar a la IA
-                texto_respuesta = analizar_imagen(img, st.secrets["GEMINI_KEY"])
+                texto_respuesta = analizar_imagen(img, st.secrets["ANTHROPIC_KEY"])
                 
                 # 2. Convertir respuesta a datos útiles
                 datos = limpiar_json(texto_respuesta)
@@ -142,6 +166,7 @@ if uploaded_files:
                 type="primary"
 
             )
+
 
 
 
